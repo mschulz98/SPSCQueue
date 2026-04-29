@@ -33,7 +33,7 @@ Benchmarks include result validation.
 | 8 | - | 520 | 1.00 | 42.64 |
 
 
-#### Record size: 64B
+#### Record size: 64 bytes
 | Version | Variant | Throughput (M op/s) | Speedup | Total speedup |
 | :---: | :---: | ---: | ---: | ---: |
 | 0 | - | 12.3 | - | - |
