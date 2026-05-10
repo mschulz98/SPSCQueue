@@ -29,7 +29,7 @@ class alignas(queue_align) SPSCQueue
 {
   static_assert(N && !(N & (N - 1)), "Size N must be a power of 2.");
 
-public:
+private:
   struct alignas(cache_align) ControlBlock
   {
     std::atomic<std::size_t> index { 0 };

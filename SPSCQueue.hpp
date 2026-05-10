@@ -20,7 +20,7 @@ static constexpr std::size_t cache_align = 64;
 static constexpr std::size_t queue_align = 2 * cache_align;
 
 /**
- * @brief A thread safe single-producer, single-consumer queue.
+ * @brief A single-producer, single-consumer queue.
  * @tparam T Record type. POD types recommended, but it is safe to use non-trivially
  * destructible types as long as they're copyable.
  * @tparam Alloc Allocator. Invoked once to create the buffer and once to free it, resizing is not supported.
@@ -34,7 +34,7 @@ class alignas(queue_align) SPSCQueue
   static constexpr std::size_t delay_incr_threshold = N / 2 - N / 32;
   static constexpr std::size_t max_delay = 500;
 
-public:
+private:
   struct alignas(cache_align) ControlBlock
   {
     std::atomic<std::size_t> index { 0 };
@@ -52,8 +52,9 @@ public:
   [[no_unique_address]] Alloc allocator;
 
   static inline std::size_t map_index(std::size_t index);
-  static inline void sleep(std::size_t iterations);
+  static inline void wait(std::size_t iterations);
   static inline void update_delay(std::size_t &delay, std::size_t last_batch);
+  static inline void print_blk_meta(const ControlBlock &block, std::string block_name);
 
   bool push_blocked(std::size_t index) const;
   bool pop_blocked(std::size_t index) const;
@@ -142,9 +143,9 @@ std::size_t SPSCQueue<T, N, Alloc>::map_index(std::size_t i)
 {
   return i % N;
 }
-#define __arm__
+
 template<typename T, std::size_t N, typename Alloc>
-void SPSCQueue<T, N, Alloc>::sleep(std::size_t iterations)
+void SPSCQueue<T, N, Alloc>::wait(std::size_t iterations)
 {
   for (std::size_t i = 0; i < iterations; ++i)
   {
@@ -170,13 +171,23 @@ void SPSCQueue<T, N, Alloc>::update_delay(std::size_t &delay, std::size_t last_b
 }
 
 template<typename T, std::size_t N, typename Alloc>
+void SPSCQueue<T, N, Alloc>::print_blk_meta(const ControlBlock &block, std::string block_name)
+{
+  std::cout << block_name << " @ " << &block << "\n"
+            << block.update_counter << " updates\n"
+            << block.stall_counter << " stalls\n"
+            << block.delay << " delay iterations\n"
+            << "Average batch size: " << static_cast<std::size_t>(block.index / std::max(1lu, block.update_counter)) << "\n";
+}
+
+template<typename T, std::size_t N, typename Alloc>
 bool SPSCQueue<T, N, Alloc>::push_blocked(std::size_t index) const
 {
   if (index - head.cached_limit == N)
   {
     update_delay(head.delay, index - head.last_batch_end);
     head.last_batch_end = index;
-    sleep(head.delay);
+    wait(head.delay);
 
     std::size_t prev_cached = head.cached_limit;
     head.cached_limit = tail.index.load(std::memory_order_acquire);
@@ -196,7 +207,7 @@ bool SPSCQueue<T, N, Alloc>::pop_blocked(std::size_t index) const
   {
     update_delay(tail.delay, index - tail.last_batch_end);
     tail.last_batch_end = index;
-    sleep(tail.delay);
+    wait(tail.delay);
 
     tail.cached_limit = head.index.load(std::memory_order_acquire);
     ++tail.update_counter;
@@ -211,15 +222,7 @@ bool SPSCQueue<T, N, Alloc>::pop_blocked(std::size_t index) const
 template<typename T, std::size_t N, typename Alloc>
 void SPSCQueue<T, N, Alloc>::print_metadata() const
 {
-  std::cout << "Producer @ " << &head << "\n"
-            << head.update_counter << " updates\n"
-            << head.stall_counter << " stalls\n"
-            << "Delay: " << head.delay
-            << "\nAverage batch: " << static_cast<std::size_t>(head.index / std::max(1lu, head.update_counter))
-            << "\nConsumer @ " << &tail << "\n"
-            << tail.update_counter << " updates\n"
-            << tail.stall_counter << " stalls\n"
-            << "Delay: " << tail.delay
-            << "\nAverage batch: " << static_cast<std::size_t>(tail.index / std::max(1lu, tail.update_counter))
-            << "\nBuffer   @ " << head.data << std::endl;
+  print_blk_meta(head, "Producer");
+  print_blk_meta(tail, "Consumer");
+  std::cout << "\nBuffer   @ " << head.data << std::endl;
 }

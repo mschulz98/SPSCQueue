@@ -24,7 +24,7 @@ class alignas(queue_align) SPSCQueue
   static constexpr std::size_t delay_incr_threshold = N / 2 - N / 32;
   static constexpr std::size_t max_delay = 500;
 
-public:
+private:
   struct alignas(cache_align) ControlBlock
   {
     std::atomic<std::size_t> index { 0 };
